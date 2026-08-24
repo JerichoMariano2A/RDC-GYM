@@ -13,16 +13,22 @@ import {
   fetchStaff,
   fetchAuditLogs,
   fetchReports,
+  fetchSalesReport,
+  checkoutClient,
+  setMembershipStatus,
+  biometricScan,
 } from '../services/auth'
 import Sidebar from '../components/Sidebar'
+import RealtimeQueue from '../components/RealtimeQueue'
+import { daysUntilExpiry, monthStartISO, peso, todayISO } from '../utils/format'
 
 const adminItems = [
-  { label: 'Reports' },
   { label: 'Dashboard' },
   { label: 'Input' },
   { label: 'Memberships' },
   { label: 'Manage Staff' },
   { label: 'Audit Logs' },
+  { label: 'Reports' },
 ]
 
 const paymentStatusOptions = [
@@ -51,23 +57,27 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState('')
   const [membershipFilter, setMembershipFilter] = useState('All')
   const [auditRoleFilter, setAuditRoleFilter] = useState('All')
-  const [dateRange, setDateRange] = useState({ from: '2026-08-01', to: '2026-08-31' })
+  const [auditSearch, setAuditSearch] = useState('')
+  const [dateRange, setDateRange] = useState({ from: monthStartISO(), to: todayISO() })
+  const [reportRange, setReportRange] = useState({ from: monthStartISO(), to: todayISO() })
   const [realtimeClients, setRealtimeClients] = useState([])
   const [memberships, setMemberships] = useState([])
   const [staffAccounts, setStaffAccounts] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
   const [reports, setReports] = useState({ totalCheckIns: 0, totalCheckOuts: 0, activeMembers: 0 })
+  const [sales, setSales] = useState({ clientSales: [], membershipSales: [], dailyBreakdown: [], visitTotal: 0, membershipTotal: 0, totalSales: 0 })
   const [newStaffName, setNewStaffName] = useState('')
   const [newStaffPassword, setNewStaffPassword] = useState('')
+  const [newStaffConfirm, setNewStaffConfirm] = useState('')
+  const [showStaffPassword, setShowStaffPassword] = useState(false)
+  const [showStaffConfirm, setShowStaffConfirm] = useState(false)
   const [newMemberName, setNewMemberName] = useState('')
   const [newMemberType, setNewMemberType] = useState('Member - Per Session')
-  const [newMemberSubscribed, setNewMemberSubscribed] = useState('2026-08-11')
-  const [newMemberExpires, setNewMemberExpires] = useState('2027-08-11')
+  const [newMemberSubscribed, setNewMemberSubscribed] = useState(todayISO())
+  const [newMemberExpires, setNewMemberExpires] = useState(new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10))
   const [editingMembership, setEditingMembership] = useState(null)
-  const [lastCreatedClient, setLastCreatedClient] = useState(null)
   const [statusMessage, setStatusMessage] = useState(null)
   const [inputMode, setInputMode] = useState('choose')
-  const [biometricClients, setBiometricClients] = useState([])
   const navigate = useNavigate()
 
   async function loadRealtimeClients() {
@@ -99,7 +109,7 @@ export default function Admin() {
 
   async function loadAuditLogs() {
     try {
-      const data = await fetchAuditLogs({ from: dateRange.from, to: dateRange.to, role: auditRoleFilter })
+      const data = await fetchAuditLogs({ from: dateRange.from, to: dateRange.to, role: auditRoleFilter, query: auditSearch })
       setAuditLogs(data)
     } catch (err) {
       console.error(err)
@@ -115,6 +125,15 @@ export default function Admin() {
     }
   }
 
+  async function loadSales() {
+    try {
+      const data = await fetchSalesReport({ from: reportRange.from, to: reportRange.to })
+      setSales(data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   async function handleSaveClient() {
     const confirmed = window.confirm(`Register non-member "${clientName}" with ${nonMemberType} and ${paymentStatus} payment?`)
     if (!confirmed) {
@@ -123,9 +142,8 @@ export default function Admin() {
     }
 
     try {
-      const client = await createClient({ name: clientName, type: nonMemberType, payment: paymentStatus })
-      setLastCreatedClient(client)
-      setStatusMessage('Non-member registered successfully')
+      await createClient({ name: clientName, type: nonMemberType, payment: paymentStatus })
+      setStatusMessage('Non-member registered and timed in')
       setClientName('')
       setNonMemberType('Non-Member - Per Session')
       setPaymentStatus('Paid')
@@ -150,45 +168,66 @@ export default function Admin() {
     }
 
     try {
-      await createMembership({
+      const payload = {
         name: newMemberName,
         type: newMemberType,
         subscribed_on: newMemberSubscribed,
         expires_on: newMemberExpires,
-      })
-      setNewMemberName('')
-      setNewMemberType('Member - Per Session')
-      setNewMemberSubscribed(new Date().toISOString().slice(0, 10))
-      setNewMemberExpires(new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10))
-      setStatusMessage('Member added successfully')
+        status: editingMembership?.status || 'active',
+      }
+      if (editingMembership) {
+        await editMembership(editingMembership.id, payload)
+        setStatusMessage('Member updated successfully')
+      } else {
+        await createMembership(payload)
+        setStatusMessage('Member added successfully')
+      }
+      handleCancelEdit()
       loadMemberships()
       loadReports()
     } catch (err) {
       console.error(err)
-      setStatusMessage('Failed to add member')
+      setStatusMessage('Failed to save member')
     }
   }
 
   async function handleSimulateFingerprint() {
-    const confirmed = window.confirm('Simulate a fingerprint scan and record a check-in?')
+    const confirmed = window.confirm('Simulate a fingerprint scan? Members already inside will be timed out automatically.')
     if (!confirmed) {
       setStatusMessage('Fingerprint scan cancelled')
       return
     }
-    const simulatedName = `Fingerprint User ${Math.floor(Math.random() * 1000)}`
+    const simulatedName = memberships[0]?.name || `Fingerprint User ${Math.floor(Math.random() * 1000)}`
     try {
       const client = await biometricScan({
         name: simulatedName,
-        type: 'Walk-in',
+        type: memberships[0]?.type || 'Member',
         payment: 'Paid',
         secret: 'rdc_biometric_secret',
       })
-      setBiometricClients(prev => [client, ...prev].slice(0, 10))
-      setStatusMessage(`Fingerprint scan recorded for ${simulatedName}`)
+      setStatusMessage(
+        client.action === 'checkout'
+          ? `Fingerprint timed out ${simulatedName}. Time spent: ${client.duration}.`
+          : `Fingerprint timed in ${simulatedName}.`,
+      )
       loadRealtimeClients()
     } catch (err) {
       console.error(err)
       setStatusMessage('Failed to record fingerprint scan')
+    }
+  }
+
+  async function handleCheckout(client) {
+    const confirmed = window.confirm(`End time for walk-in client "${client.name}"?`)
+    if (!confirmed) return
+    try {
+      const updated = await checkoutClient(client.id)
+      setStatusMessage(`${updated.name} timed out. Time spent: ${updated.duration}.`)
+      loadRealtimeClients()
+      loadReports()
+    } catch (err) {
+      console.error(err)
+      setStatusMessage(err.response?.data?.error || 'Failed to record time out')
     }
   }
 
@@ -207,30 +246,51 @@ export default function Admin() {
     setEditingMembership(null)
     setNewMemberName('')
     setNewMemberType('Member - Per Session')
-    setNewMemberSubscribed(new Date().toISOString().slice(0, 10))
+    setNewMemberSubscribed(todayISO())
     setNewMemberExpires(new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10))
-    setStatusMessage(null)
   }
 
   async function handleDeleteMembership(id) {
-    const confirmed = window.confirm('Are you sure you want to remove this member? This cannot be undone.')
+    const confirmed = window.confirm('Delete this member record permanently? This cannot be undone.')
     if (!confirmed) {
-      setStatusMessage('Member removal cancelled')
+      setStatusMessage('Member deletion cancelled')
       return
     }
     try {
       await deleteMembership(id)
-      setStatusMessage('Member removed successfully')
+      setStatusMessage('Member record deleted')
       loadMemberships()
     } catch (err) {
       console.error(err)
-      setStatusMessage('Failed to remove member')
+      setStatusMessage('Failed to delete member')
+    }
+  }
+
+  async function handleToggleMembership(member) {
+    const nextStatus = member.status === 'inactive' ? 'active' : 'inactive'
+    const confirmed = window.confirm(
+      nextStatus === 'inactive'
+        ? `Deactivate ${member.name}? Use this for members about to expire or with no appearance.`
+        : `Reactivate ${member.name}?`,
+    )
+    if (!confirmed) return
+    try {
+      await setMembershipStatus(member.id, nextStatus)
+      setStatusMessage(nextStatus === 'inactive' ? `${member.name} deactivated` : `${member.name} reactivated`)
+      loadMemberships()
+    } catch (err) {
+      console.error(err)
+      setStatusMessage('Failed to update membership status')
     }
   }
 
   async function handleAddStaff() {
-    if (!newStaffName || !newStaffPassword) {
-      setStatusMessage('Enter staff username and password')
+    if (!newStaffName || !newStaffPassword || !newStaffConfirm) {
+      setStatusMessage('Enter username, password, and confirm password')
+      return
+    }
+    if (newStaffPassword !== newStaffConfirm) {
+      setStatusMessage('Password and confirm password do not match')
       return
     }
     const confirmed = window.confirm(`Create staff account "${newStaffName}"?`)
@@ -239,14 +299,15 @@ export default function Admin() {
       return
     }
     try {
-      await createStaff({ username: newStaffName, password: newStaffPassword })
+      await createStaff({ username: newStaffName, password: newStaffPassword, confirmPassword: newStaffConfirm })
       setNewStaffName('')
       setNewStaffPassword('')
+      setNewStaffConfirm('')
       setStatusMessage('Staff account created')
       loadStaffAccounts()
     } catch (err) {
       console.error(err)
-      setStatusMessage('Failed to add staff')
+      setStatusMessage(err.response?.data?.error || 'Failed to add staff')
     }
   }
 
@@ -258,11 +319,16 @@ export default function Admin() {
     }
     try {
       await deleteStaff(id)
+      setStatusMessage('Staff account deleted')
       loadStaffAccounts()
     } catch (err) {
       console.error(err)
       setStatusMessage('Failed to delete staff')
     }
+  }
+
+  function printSalesReport() {
+    window.print()
   }
 
   useEffect(() => {
@@ -281,11 +347,21 @@ export default function Admin() {
     })
   }, [memberships, searchTerm, membershipFilter])
 
+  const groupedAuditLogs = useMemo(() => {
+    return auditLogs.reduce((groups, log) => {
+      const key = log.log_date || (log.timestamp || '').slice(0, 10) || 'Unknown date'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(log)
+      return groups
+    }, {})
+  }, [auditLogs])
+
   useEffect(() => {
     let intervalId
     if (activePage === 'Dashboard') {
       loadRealtimeClients()
       loadReports()
+      loadMemberships()
       intervalId = setInterval(() => {
         loadRealtimeClients()
         loadReports()
@@ -296,8 +372,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (activePage === 'Input') {
-      setInputMode('choose')
-      setEditingMembership(null)
+      setInputMode(editingMembership ? 'member' : 'choose')
       setStatusMessage(null)
     }
   }, [activePage])
@@ -312,18 +387,21 @@ export default function Admin() {
 
   useEffect(() => {
     if (activePage === 'Audit Logs') loadAuditLogs()
-  }, [activePage, auditRoleFilter, dateRange])
+  }, [activePage, auditRoleFilter, dateRange, auditSearch])
 
   useEffect(() => {
-    if (activePage === 'Reports') loadReports()
-  }, [activePage])
+    if (activePage === 'Reports') {
+      loadReports()
+      loadSales()
+    }
+  }, [activePage, reportRange])
 
   return (
     <div className="app-layout">
       <Sidebar items={adminItems} activeItem={activePage} onSelect={setActivePage} onLogout={() => { logout(); navigate('/login') }} />
       <main className="main-view">
         {activePage === 'Dashboard' && (
-          <header className="page-header header-with-actions">
+          <header className="page-header header-with-actions no-print">
             <div>
               <h2>RDC GYM</h2>
               <p>Admin dashboard</p>
@@ -341,42 +419,19 @@ export default function Admin() {
         <section className="content-card">
           {activePage === 'Dashboard' && (
             <>
-              <div className="section-title-row">
-                <h3>Dashboard</h3>
-                <p>Live client queue and check-in status.</p>
-              </div>
-              <div className="status-grid">
+              <div className="status-grid no-print">
                 <div className="stat-card"><strong>Total Check-Ins</strong><span>{reports.totalCheckIns}</span></div>
                 <div className="stat-card"><strong>Total Check-Outs</strong><span>{reports.totalCheckOuts}</span></div>
                 <div className="stat-card"><strong>Active Members</strong><span>{reports.activeMembers}</span></div>
               </div>
-              <div className="table-card">
-                <div className="table-card-header"><strong>Real-time client details</strong></div>
-                <div className="fingerprint-note">Fingerprint scans from R307 appear here automatically when the system receives them.</div>
-                <button type="button" className="pill active" onClick={handleSimulateFingerprint}>Simulate Fingerprint Scan</button>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Client Name</th>
-                      <th>Type</th>
-                      <th>Payment</th>
-                      <th>In</th>
-                      <th>Out</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {realtimeClients.map(client => (
-                      <tr key={client.id ?? client.name}>
-                        <td>{client.name}</td>
-                        <td>{client.type}</td>
-                        <td>{client.payment}</td>
-                        <td>{client.time_in}</td>
-                        <td>{client.time_out}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <RealtimeQueue
+                clients={realtimeClients}
+                now={currentTime}
+                onCheckout={handleCheckout}
+                onSimulateFingerprint={handleSimulateFingerprint}
+                canSimulate
+                statusMessage={statusMessage}
+              />
             </>
           )}
 
@@ -391,20 +446,8 @@ export default function Admin() {
 
               {inputMode === 'choose' && (
                 <div className="input-choice-grid">
-                  <button
-                    type="button"
-                    className="pill action choice-button"
-                    onClick={() => setInputMode('register')}
-                  >
-                    NON MEMBER
-                  </button>
-                  <button
-                    type="button"
-                    className="pill action choice-button"
-                    onClick={() => setInputMode('member')}
-                  >
-                    MEMBER
-                  </button>
+                  <button type="button" className="pill action choice-button" onClick={() => setInputMode('register')}>NON MEMBER</button>
+                  <button type="button" className="pill action choice-button" onClick={() => setInputMode('member')}>MEMBER</button>
                 </div>
               )}
 
@@ -413,7 +456,7 @@ export default function Admin() {
                   <div className="section-title-row">
                     <div>
                       <h3>REGISTER NON-MEMBER</h3>
-                      <p className="section-subtitle">Enter the non-member details and payment information.</p>
+                      <p className="section-subtitle">Walk-in clients are timed in now. End Time is done from the Dashboard.</p>
                     </div>
                     <button type="button" className="pill" onClick={() => setInputMode('choose')}>Back</button>
                   </div>
@@ -461,7 +504,7 @@ export default function Admin() {
                       <h3>{editingMembership ? 'EDIT MEMBER' : 'ADD NEW MEMBER'}</h3>
                       <p className="section-subtitle">Enter the member details for membership record creation.</p>
                     </div>
-                    <button type="button" className="pill" onClick={() => setInputMode('choose')}>Back</button>
+                    <button type="button" className="pill" onClick={() => { handleCancelEdit(); setInputMode('choose') }}>Back</button>
                   </div>
                   <div className="register-card">
                     <div className="form-grid membership-form">
@@ -488,7 +531,7 @@ export default function Admin() {
                     </div>
                     <div className="submit-row">
                       <button type="button" className="pill action" onClick={handleCreateMembership}>{editingMembership ? 'Update Member' : 'Add Member'}</button>
-                      {editingMembership && <button type="button" className="pill danger" onClick={handleCancelEdit} style={{ marginLeft: '12px' }}>Cancel</button>}
+                      {editingMembership && <button type="button" className="pill danger" onClick={handleCancelEdit}>Cancel</button>}
                     </div>
                   </div>
                 </>
@@ -503,10 +546,7 @@ export default function Admin() {
               <div className="section-title-row">
                 <div>
                   <h3>Member List</h3>
-                  <p>Search by member name and review current membership records.</p>
-                  <p style={{ marginTop: '8px', color: '#6b7280', fontSize: '0.95rem' }}>
-                    Use the Input page to add or edit member records.
-                  </p>
+                  <p>Deactivate members who are about to expire or have no appearance, reactivate them later, or delete the record.</p>
                 </div>
                 <div className="search-row">
                   <input type="search" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search name" />
@@ -520,25 +560,42 @@ export default function Admin() {
                       <th>Type</th>
                       <th>Date of Subscriptions</th>
                       <th>Subscription Expiration</th>
+                      <th>Status</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredMembers.map(member => (
-                      <tr key={member.id ?? member.name}>
-                        <td>{member.name}</td>
-                        <td>{member.type}</td>
-                        <td>{member.subscribed}</td>
-                        <td>{member.expires}</td>
-                        <td>
-                          <button type="button" className="pill" onClick={() => handleEditMembership(member)}>Edit</button>
-                          <button type="button" className="pill danger" onClick={() => handleDeleteMembership(member.id)}>Remove</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredMembers.map(member => {
+                      const daysLeft = daysUntilExpiry(member.expires)
+                      const expiring = daysLeft != null && daysLeft <= 7 && member.status !== 'inactive'
+                      return (
+                        <tr key={member.id ?? member.name}>
+                          <td>{member.name}</td>
+                          <td>{member.type}</td>
+                          <td>{member.subscribed}</td>
+                          <td>
+                            {member.expires}
+                            {expiring && <span className="expiry-chip">{daysLeft < 0 ? 'Expired' : `${daysLeft}d left`}</span>}
+                          </td>
+                          <td>
+                            <span className={member.status === 'inactive' ? 'status-chip inactive' : 'status-chip active'}>
+                              {member.status === 'inactive' ? 'Inactive' : 'Active'}
+                            </span>
+                          </td>
+                          <td className="action-cell">
+                            <button type="button" className="pill" onClick={() => handleEditMembership(member)}>Edit</button>
+                            <button type="button" className="pill" onClick={() => handleToggleMembership(member)}>
+                              {member.status === 'inactive' ? 'Reactivate' : 'Deactivate'}
+                            </button>
+                            <button type="button" className="pill danger" onClick={() => handleDeleteMembership(member.id)}>Delete</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
+              {statusMessage && <div className="status-message">{statusMessage}</div>}
             </>
           )}
 
@@ -548,12 +605,6 @@ export default function Admin() {
                 <h3>Manage Staff</h3>
                 <div className="right-label">Admin Panel</div>
               </div>
-              <div className="top-bar">
-                <span>+ Add new staff account</span>
-              </div>
-              <div className="top-bar">
-                <button type="button" className="pill active" onClick={handleAddStaff}>+ Add new staff account</button>
-              </div>
               <div className="form-grid staff-form">
                 <label>
                   Staff Username
@@ -561,8 +612,45 @@ export default function Admin() {
                 </label>
                 <label>
                   Staff Password
-                  <input type="password" value={newStaffPassword} onChange={e => setNewStaffPassword(e.target.value)} placeholder="Enter password" />
+                  <div className="password-field">
+                    <input
+                      type={showStaffPassword ? 'text' : 'password'}
+                      value={newStaffPassword}
+                      onChange={e => setNewStaffPassword(e.target.value)}
+                      placeholder="Enter password"
+                    />
+                    <button
+                      type="button"
+                      className={showStaffPassword ? 'password-toggle show' : 'password-toggle'}
+                      onClick={() => setShowStaffPassword(prev => !prev)}
+                      aria-label={showStaffPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <span className="eye-icon" aria-hidden="true"></span>
+                    </button>
+                  </div>
                 </label>
+                <label>
+                  Confirm Password
+                  <div className="password-field">
+                    <input
+                      type={showStaffConfirm ? 'text' : 'password'}
+                      value={newStaffConfirm}
+                      onChange={e => setNewStaffConfirm(e.target.value)}
+                      placeholder="Re-enter password"
+                    />
+                    <button
+                      type="button"
+                      className={showStaffConfirm ? 'password-toggle show' : 'password-toggle'}
+                      onClick={() => setShowStaffConfirm(prev => !prev)}
+                      aria-label={showStaffConfirm ? 'Hide confirm password' : 'Show confirm password'}
+                    >
+                      <span className="eye-icon" aria-hidden="true"></span>
+                    </button>
+                  </div>
+                </label>
+              </div>
+              <div className="submit-row" style={{ justifyContent: 'flex-start' }}>
+                <button type="button" className="pill active" onClick={handleAddStaff}>+ Add new staff account</button>
               </div>
               <div className="table-card">
                 <table>
@@ -581,7 +669,6 @@ export default function Admin() {
                         <td>{staff.staffId}</td>
                         <td>{staff.dateAdded}</td>
                         <td>
-                          <button className="pill">Edit</button>
                           <button className="pill danger" onClick={() => handleDeleteStaff(staff.id)}>Delete</button>
                         </td>
                       </tr>
@@ -596,7 +683,10 @@ export default function Admin() {
           {activePage === 'Audit Logs' && (
             <>
               <div className="section-title-row">
-                <h3>Audit Logs</h3>
+                <div>
+                  <h3>Audit Logs</h3>
+                  <p className="section-subtitle">Admin-only activity trail. Staff logins, check-ins, membership changes, and account actions are stored here for transparency.</p>
+                </div>
                 <div className="filter-row">
                   <label>
                     From
@@ -614,49 +704,153 @@ export default function Admin() {
                       <option>Staff</option>
                     </select>
                   </label>
+                  <label>
+                    Search
+                    <input value={auditSearch} onChange={e => setAuditSearch(e.target.value)} placeholder="User, event, or detail" />
+                  </label>
                 </div>
               </div>
+              <div className="audit-secure-note">Only administrators can open this page. Entries cannot be edited from the panel.</div>
+              {Object.keys(groupedAuditLogs).length === 0 && (
+                <div className="table-card"><div className="table-card-header">No activity in this date range.</div></div>
+              )}
+              {Object.entries(groupedAuditLogs).map(([day, logs]) => (
+                <div className="table-card audit-group" key={day}>
+                  <div className="table-card-header"><strong>{day}</strong><span>{logs.length} event{logs.length === 1 ? '' : 's'}</span></div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Event</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map(log => (
+                        <tr key={log.id ?? `${log.timestamp}-${log.user}-${log.event}`}>
+                          <td>{(log.timestamp || '').slice(11) || log.timestamp}</td>
+                          <td>{log.user}</td>
+                          <td><span className={`status-chip ${log.role === 'admin' ? 'active' : 'staff'}`}>{log.role}</span></td>
+                          <td>{log.event}</td>
+                          <td>{log.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </>
+          )}
+
+          {activePage === 'Reports' && (
+            <div className="print-report">
+              <div className="section-title-row header-right-label no-print">
+                <div>
+                  <h3>Reports / POS</h3>
+                  <p className="section-subtitle">Track income from the selected start date through the selected end date. Sales are broken down by the system. Print to save as PDF. Excel export is not used.</p>
+                </div>
+                <div className="right-label">Admin Reports</div>
+              </div>
+              <div className="print-only-title">
+                <h2>RDC GYM POS Sales Report</h2>
+                <p>{reportRange.from} to {reportRange.to}</p>
+              </div>
+              <div className="filter-row no-print">
+                <label>
+                  From
+                  <input type="date" value={reportRange.from} onChange={e => setReportRange(prev => ({ ...prev, from: e.target.value }))} />
+                </label>
+                <label>
+                  To
+                  <input type="date" value={reportRange.to} onChange={e => setReportRange(prev => ({ ...prev, to: e.target.value }))} />
+                </label>
+              </div>
+              <div className="status-grid">
+                <div className="stat-card"><strong>Visit Income</strong><span>{peso(sales.visitTotal)}</span></div>
+                <div className="stat-card"><strong>Membership Income</strong><span>{peso(sales.membershipTotal)}</span></div>
+                <div className="stat-card"><strong>Total Sales</strong><span>{peso(sales.totalSales)}</span></div>
+              </div>
+              <div className="status-grid">
+                <div className="stat-card"><strong>Check-Ins (today)</strong><span>{reports.totalCheckIns}</span></div>
+                <div className="stat-card"><strong>Check-Outs (today)</strong><span>{reports.totalCheckOuts}</span></div>
+                <div className="stat-card"><strong>Active Members</strong><span>{reports.activeMembers}</span></div>
+              </div>
               <div className="table-card">
+                <div className="table-card-header"><strong>Visit sales by type</strong></div>
                 <table>
                   <thead>
                     <tr>
-                      <th>Timestamp</th>
-                      <th>User</th>
-                      <th>Event Type</th>
-                      <th>Description</th>
+                      <th>Type</th>
+                      <th>Paid Visits</th>
+                      <th>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {auditLogs.map(log => (
-                      <tr key={`${log.timestamp}-${log.user}`}>
-                        <td>{log.timestamp}</td>
-                        <td>{log.user}</td>
-                        <td>{log.event}</td>
-                        <td>{log.description}</td>
+                    {(sales.clientSales || []).length === 0 && <tr><td colSpan={3}>No paid visits in this range.</td></tr>}
+                    {(sales.clientSales || []).map(row => (
+                      <tr key={row.type}>
+                        <td>{row.type}</td>
+                        <td>{row.visits}</td>
+                        <td>{peso(row.total)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
-
-          {activePage === 'Reports' && (
-            <>
-              <div className="section-title-row header-right-label">
-                <h3>Reports</h3>
-                <div className="right-label">Admin Reports: System Check-in/Check out & System Usage</div>
+              <div className="table-card" style={{ marginTop: 18 }}>
+                <div className="table-card-header"><strong>Membership sales by plan</strong></div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Plan</th>
+                      <th>Subscriptions</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sales.membershipSales || []).length === 0 && <tr><td colSpan={3}>No membership sales in this range.</td></tr>}
+                    {(sales.membershipSales || []).map(row => (
+                      <tr key={row.type}>
+                        <td>{row.type}</td>
+                        <td>{row.count}</td>
+                        <td>{peso(row.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="status-grid">
-                <div className="stat-card"><strong>Total Check-Ins (today)</strong><span>{reports.totalCheckIns}</span></div>
-                <div className="stat-card"><strong>Total Check-Outs (today)</strong><span>{reports.totalCheckOuts}</span></div>
-                <div className="stat-card"><strong>Members (Active Members)</strong><span>{reports.activeMembers}</span></div>
+              <div className="table-card" style={{ marginTop: 18 }}>
+                <div className="table-card-header"><strong>Daily sales breakdown</strong></div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Source</th>
+                      <th>Type</th>
+                      <th>Qty</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sales.dailyBreakdown || []).length === 0 && <tr><td colSpan={5}>No sales recorded for the selected dates.</td></tr>}
+                    {(sales.dailyBreakdown || []).map(row => (
+                      <tr key={`${row.sale_date}-${row.source}-${row.type}`}>
+                        <td>{typeof row.sale_date === 'string' ? row.sale_date.slice(0, 10) : row.sale_date}</td>
+                        <td>{row.source}</td>
+                        <td>{row.type}</td>
+                        <td>{row.qty}</td>
+                        <td>{peso(row.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="report-actions">
-                <button className="pill">Download as PDF</button>
-                <button className="pill">Print Reports</button>
+              <div className="report-actions no-print">
+                <button type="button" className="pill action" onClick={printSalesReport}>Print / Save as PDF</button>
               </div>
-            </>
+            </div>
           )}
         </section>
       </main>

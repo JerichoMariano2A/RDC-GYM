@@ -40,6 +40,16 @@ const pool = mysql.createPool({
   }
 })();
 
+async function addColumnIfMissing(table, column, definition) {
+  const [rows] = await pool.query(
+    'SELECT COUNT(*) AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+    [DB_NAME, table, column],
+  );
+  if (!rows[0].c) {
+    await pool.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
+  }
+}
+
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -55,8 +65,9 @@ async function ensureTables() {
     CREATE TABLE IF NOT EXISTS clients (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
-      client_type ENUM('Walk-in','Member','CI') NOT NULL DEFAULT 'Walk-in',
+      client_type VARCHAR(100) NOT NULL DEFAULT 'Walk-in',
       payment_status ENUM('Paid','Not Paid','CI') NOT NULL DEFAULT 'Paid',
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       time_in DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       time_out DATETIME NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -70,9 +81,20 @@ async function ensureTables() {
       membership_type VARCHAR(100) NOT NULL,
       subscribed_on DATE NOT NULL,
       expires_on DATE NOT NULL,
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      status ENUM('active','inactive') NOT NULL DEFAULT 'active',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB;
   `);
+
+  await addColumnIfMissing('clients', 'price', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+  await addColumnIfMissing('memberships', 'price', 'DECIMAL(10,2) NOT NULL DEFAULT 0.00');
+  await addColumnIfMissing('memberships', 'status', "ENUM('active','inactive') NOT NULL DEFAULT 'active'");
+  try {
+    await pool.query("ALTER TABLE clients MODIFY COLUMN client_type VARCHAR(100) NOT NULL DEFAULT 'Walk-in'");
+  } catch (err) {
+    console.warn('Could not widen clients.client_type:', err.message);
+  }
 
   await pool.query('CREATE TABLE IF NOT EXISTS audit_logs (' +
     'id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,' +

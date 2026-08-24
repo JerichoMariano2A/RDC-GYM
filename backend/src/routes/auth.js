@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
+const { writeAudit } = require('../audit');
 require('dotenv').config();
 
 const router = express.Router();
@@ -23,6 +24,13 @@ router.post('/login', async (req, res) => {
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '4h' });
+    await writeAudit(
+      { user: { id: user.id, username: user.username, role: user.role }, ip: req.ip, headers: req.headers },
+      'Login',
+      `${user.role === 'admin' ? 'Admin' : 'Staff'} ${user.username} signed in.`,
+      'users',
+      user.id,
+    );
     res.json({ token, role: user.role });
   } catch (err) {
     console.error(err);

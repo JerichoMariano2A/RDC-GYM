@@ -111,3 +111,29 @@ body{box-sizing:border-box;font-family:Inter, Arial, sans-serif;margin:0;min-hei
 .top-bar{padding:18px 0;display:flex;justify-content:space-between;align-items:center;color:var(--accent);font-weight:700;}
 .report-actions{display:flex;gap:14px;justify-content:flex-end;margin-top:24px;}
 .input-table button{margin:0;}
+.dashboard-tabs{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;}
+.table-toolbar{padding:0 22px 16px;}
+.filter-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+.filter-row label{display:flex;flex-direction:column;gap:8px;font-size:.85rem;font-weight:700;color:var(--muted);}
+.filter-row input,.filter-row select{padding:12px 14px;border:1px solid rgba(148,163,184,0.25);border-radius:16px;background:#fff;}
+.action-cell{display:flex;gap:8px;flex-wrap:wrap;}
+.expiry-chip,.status-chip{display:inline-block;margin-left:8px;padding:4px 10px;border-radius:999px;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+.expiry-chip{background:#fef3c7;color:#92400e;margin-left:10px;}
+.status-chip.active{background:#dcfce7;color:#166534;}
+.status-chip.inactive{background:#fee2e2;color:#991b1b;}
+.status-chip.staff{background:#e0e7ff;color:#3730a3;}
+.muted-text{color:var(--muted);font-weight:600;}
+.audit-secure-note{margin-bottom:16px;padding:14px 18px;border-radius:18px;background:rgba(15,23,42,0.06);color:#334155;font-weight:600;}
+.audit-group{margin-bottom:18px;}
+.audit-group .table-card-header{display:flex;justify-content:space-between;align-items:center;}
+.form-grid .password-field{width:100%;}
+.form-grid .password-field input{padding-right:54px;}
+.print-only-title{display:none;}
+@media print{
+  body{background:#fff;}
+  .sidebar,.no-print,.sidebar-logout,.page-header{display:none !important;}
+  .app-layout{display:block;}
+  .main-view,.content-card{padding:0;box-shadow:none;}
+  .print-only-title{display:block;margin-bottom:18px;}
+  .table-card{box-shadow:none;break-inside:avoid;}
+}

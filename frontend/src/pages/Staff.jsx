@@ -5,18 +5,34 @@ import {
   createClient,
   fetchRealtimeClients,
   fetchMemberships,
+  checkoutClient,
 } from '../services/auth'
 import Sidebar from '../components/Sidebar'
+import RealtimeQueue from '../components/RealtimeQueue'
 
 const staffItems = [
   { label: 'Dashboard' },
   { label: 'Input' },
   { label: 'Memberships' },
 ]
+
+const paymentStatusOptions = [
+  { label: 'Paid', value: 'Paid' },
+  { label: 'Unpaid', value: 'Not Paid' },
+]
+
+const nonMemberTypeOptions = [
+  { label: 'Non-Member - Per Session (₱70)', value: 'Non-Member - Per Session' },
+  { label: 'Non-Member - Student (₱60)', value: 'Non-Member - Student' },
+  { label: 'Non-Member - Monthly (₱1,100)', value: 'Non-Member - Monthly' },
+]
+
+export default function Staff() {
+  const [activePage, setActivePage] = useState('Dashboard')
   const [currentTime, setCurrentTime] = useState(new Date())
   const [clientName, setClientName] = useState('')
-  const [membershipStatus, setMembershipStatus] = useState('Member')
   const [paymentStatus, setPaymentStatus] = useState('Paid')
+  const [nonMemberType, setNonMemberType] = useState('Non-Member - Per Session')
   const [searchTerm, setSearchTerm] = useState('')
   const [membershipFilter, setMembershipFilter] = useState('All')
   const [realtimeClients, setRealtimeClients] = useState([])
@@ -30,7 +46,12 @@ const staffItems = [
   }, [])
 
   useEffect(() => {
-    if (activePage === 'Dashboard') loadRealtimeClients()
+    let intervalId
+    if (activePage === 'Dashboard') {
+      loadRealtimeClients()
+      intervalId = setInterval(loadRealtimeClients, 5000)
+    }
+    return () => clearInterval(intervalId)
   }, [activePage])
 
   useEffect(() => {
@@ -93,21 +114,34 @@ const staffItems = [
       setStatusMessage('Enter a client name')
       return
     }
-    const confirmed = window.confirm(`Register client "${clientName}" as ${membershipStatus}?`)
+    const confirmed = window.confirm(`Register non-member "${clientName}" as ${nonMemberType}?`)
     if (!confirmed) {
       setStatusMessage('Client registration cancelled')
       return
     }
     try {
-      await createClient({ name: clientName, type: membershipStatus, payment: paymentStatus })
-      setStatusMessage('Client registered successfully')
+      await createClient({ name: clientName, type: nonMemberType, payment: paymentStatus })
+      setStatusMessage('Non-member registered and timed in')
       setClientName('')
-      setMembershipStatus('Member')
+      setNonMemberType('Non-Member - Per Session')
       setPaymentStatus('Paid')
       loadRealtimeClients()
     } catch (err) {
       console.error(err)
       setStatusMessage('Failed to save client')
+    }
+  }
+
+  async function handleCheckout(client) {
+    const confirmed = window.confirm(`End time for walk-in client "${client.name}"?`)
+    if (!confirmed) return
+    try {
+      const updated = await checkoutClient(client.id)
+      setStatusMessage(`${updated.name} timed out. Time spent: ${updated.duration}.`)
+      loadRealtimeClients()
+    } catch (err) {
+      console.error(err)
+      setStatusMessage(err.response?.data?.error || 'Failed to record time out')
     }
   }
 
@@ -131,92 +165,55 @@ const staffItems = [
 
         <section className="content-card">
           {activePage === 'Dashboard' && (
-            <>
-              <div className="section-title-row">
-                <h3>Dashboard</h3>
-                <p>See live check-in data and current visitors.</p>
-              </div>
-              <div className="table-card">
-                <div className="table-card-header"><strong>Real-time client details</strong></div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Client Name</th>
-                      <th>Type</th>
-                      <th>Payment</th>
-                      <th>In</th>
-                      <th>Out</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {realtimeClients.map(client => (
-                      <tr key={client.id ?? client.name}>
-                        <td>{client.name}</td>
-                        <td>{client.type}</td>
-                        <td>{client.payment}</td>
-                        <td>{client.time_in}</td>
-                        <td>{client.time_out}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+            <RealtimeQueue
+              clients={realtimeClients}
+              now={currentTime}
+              onCheckout={handleCheckout}
+              statusMessage={statusMessage}
+            />
           )}
 
           {activePage === 'Input' && (
             <>
               <div className="section-title-row">
-                <h3>Register New Client</h3>
+                <div>
+                  <h3>Register Non-Member</h3>
+                  <p className="section-subtitle">Walk-in clients are timed in now. Use Dashboard End Time when they leave.</p>
+                </div>
               </div>
-              <div className="form-grid">
-                <label>
-                  Client Name
-                  <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Type client name" />
-                </label>
-                <label>
-                  Membership Status
-                  <div className="button-group">
-                    {['Member', 'Walk-in', 'CI'].map(status => (
-                      <button
-                        key={status}
-                        type="button"
-                        className={membershipStatus === status ? 'pill active' : 'pill'}
-                        onClick={() => setMembershipStatus(status)}
-                      >
-                        {status}
-                      </button>
-                    ))}
-                  </div>
-                </label>
-                <label>
-                  Payment Status
-                  <select value={paymentStatus} onChange={e => setPaymentStatus(e.target.value)}>
-                    <option>Paid</option>
-                    <option>Not Paid</option>
-                    <option>CI</option>
-                  </select>
-                </label>
-              </div>
-              <div className="table-card input-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Client Name</th>
-                      <th>Membership Status</th>
-                      <th>Payment Status</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>{clientName || 'No client name yet'}</td>
-                      <td>{membershipStatus}</td>
-                      <td>{paymentStatus}</td>
-                      <td><button type="button" className="pill active" onClick={handleSaveClient}>Save</button></td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="register-card">
+                <div className="form-grid input-grid">
+                  <label>
+                    Client Name
+                    <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Type client name" />
+                  </label>
+                  <label>
+                    Non-Member Type
+                    <select value={nonMemberType} onChange={e => setNonMemberType(e.target.value)}>
+                      {nonMemberTypeOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Payment Status
+                    <div className="button-group pill-group">
+                      {paymentStatusOptions.map(option => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={paymentStatus === option.value ? 'pill active' : 'pill'}
+                          onClick={() => setPaymentStatus(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+                </div>
+                <div className="submit-row">
+                  <button type="button" className="pill action" onClick={handleSaveClient}>Register Non-Member</button>
+                </div>
               </div>
               {statusMessage && <div className="status-message">{statusMessage}</div>}
             </>
@@ -236,9 +233,6 @@ const staffItems = [
                     <option>Member - Per Session</option>
                     <option>Member - Monthly</option>
                     <option>Member - Yearly</option>
-                    <option>Non-Member - Per Session</option>
-                    <option>Non-Member - Student</option>
-                    <option>Non-Member - Monthly</option>
                   </select>
                 </div>
               </div>
@@ -250,6 +244,7 @@ const staffItems = [
                       <th>Type</th>
                       <th>Date of Subscriptions</th>
                       <th>Subscription Expiration</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -259,6 +254,7 @@ const staffItems = [
                         <td>{member.type}</td>
                         <td>{member.subscribed}</td>
                         <td>{member.expires}</td>
+                        <td>{member.status === 'inactive' ? 'Inactive' : 'Active'}</td>
                       </tr>
                     ))}
                   </tbody>

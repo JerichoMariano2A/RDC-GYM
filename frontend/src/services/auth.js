@@ -72,8 +72,23 @@ export async function fetchAuditLogs(params){
   return res.data
 }
 
+export async function checkoutClient(id){
+  const res = await axiosInstance.post(`/data/clients/${id}/checkout`)
+  return res.data
+}
+
+export async function setMembershipStatus(id, status){
+  const res = await axiosInstance.patch(`/data/memberships/${id}/status`, { status })
+  return res.data
+}
+
 export async function fetchReports(){
   const res = await axiosInstance.get('/data/reports')
+  return res.data
+}
+
+export async function fetchSalesReport(params){
+  const res = await axiosInstance.get('/data/reports/sales', { params })
   return res.data
 }
 
