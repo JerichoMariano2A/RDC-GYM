@@ -7,6 +7,9 @@ const DB_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306;
 const DB_USER = process.env.DB_USER ?? 'admin';
 const DB_PASSWORD = process.env.DB_PASSWORD ?? 'adminpass';
 const DB_NAME = process.env.DB_NAME ?? 'rdc_gym';
+const DB_SSL = process.env.DB_SSL === '1' || process.env.DB_SSL === 'true';
+
+const tls = DB_SSL ? { rejectUnauthorized: false } : undefined;
 
 const pool = mysql.createPool({
   host: DB_HOST,
@@ -15,6 +18,7 @@ const pool = mysql.createPool({
   password: DB_PASSWORD,
   database: DB_NAME,
   connectionLimit: 10,
+  ssl: tls,
 });
 
 // ensure the database exists before attempting pool queries
@@ -25,6 +29,7 @@ const pool = mysql.createPool({
       port: DB_PORT,
       user: DB_USER,
       password: DB_PASSWORD,
+      ssl: tls,
     });
     await adminConn.query(`CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
     await adminConn.end();

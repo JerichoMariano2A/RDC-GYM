@@ -9,8 +9,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'rdc-gym-backend', time: new Date().toISOString() });
+const pool = require('./db');
+
+app.get('/', async (req, res) => {
+  let db = 'unknown';
+  let dbError = null;
+  try {
+    const conn = await pool.getConnection();
+    await conn.ping();
+    conn.release();
+    db = 'connected';
+  } catch (err) {
+    db = err.code || 'error';
+    dbError = err.message;
+  }
+  res.json({ ok: true, service: 'rdc-gym-backend', db, dbError, time: new Date().toISOString() });
 });
 
 app.use('/auth', authRoutes);
@@ -45,7 +58,6 @@ app.listen(PORT, () => {
 // catches the current day's open visits. The read-time reconciliation in
 // /clients/realtime handles any residual stale visits the next morning.
 // ---------------------------------------------------------------------------
-const pool = require('./db');
 const GYM_CLOSE_HOUR = 22; // 10 PM
 let lastNightlyResetDate = '';
 
