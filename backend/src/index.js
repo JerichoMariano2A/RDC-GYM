@@ -9,6 +9,10 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
+app.get('/', (req, res) => {
+  res.json({ ok: true, service: 'rdc-gym-backend', time: new Date().toISOString() });
+});
+
 app.use('/auth', authRoutes);
 const dataRoutes = require('./routes/data');
 app.use('/data', dataRoutes);

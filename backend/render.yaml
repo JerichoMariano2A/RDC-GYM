@@ -1,0 +1,38 @@
+# Render blueprint for the RDC GYM backend.
+# Deploy: push this repo to GitHub, then in Render use
+# "New + > Blueprint" and point it at this repository, or create a
+# "Web Service" from backend/ directly. Fill in the env vars below
+# (DB_*, secrets) in the Render dashboard after deploy.
+services:
+  - type: web
+    name: rdc-gym-backend
+    runtime: node
+    repo: https://github.com/JerichoMariano2A/RDC-GYM.git
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ESP_SECRET
+        sync: false
+      - key: BIOMETRIC_SECRET
+        sync: false

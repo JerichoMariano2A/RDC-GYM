@@ -19,11 +19,15 @@ const char* WIFI_PASS = "fkHJ6AGe";            // fallback password
 const uint32_t CONFIG_SERIAL_WINDOW_MS = 15000; // how long serial input is accepted at boot
 
 // ---------------------------------------------------------------------------
-// Backend (the Node/Express server on your LAN)
-//   e.g. host = "192.168.1.50", port = 4000
+// Backend (the Node/Express server; IP on the LAN or a public hostname)
+//   e.g. host = "192.168.1.50", port = 4000   (LAN backend)
+//   e.g. host = "rdc-gym-backend.onrender.com", port = 443 (public HTTPS backend)
+// The firmware always talks to the backend over HTTPS. For a LAN backend that
+// only serves plain HTTP, keep BACKEND_PORT = 4000 and use "http://" URLs;
+// for a public (cloud) backend, keep BACKEND_PORT = 443.
 // ---------------------------------------------------------------------------
 const char* BACKEND_HOST = "192.168.100.9";  // fallback host (leave empty to force config)
-const uint16_t BACKEND_PORT = 4000;
+const uint16_t BACKEND_PORT = 443;
 
 // Shared secret - must match BACKEND .env ESP_SECRET (or BIOMETRIC_SECRET)
 const char* ESP_SECRET = "rdc_esp_secret";

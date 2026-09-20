@@ -24,6 +24,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <HardwareSerial.h>
 #include <Preferences.h>
@@ -37,6 +38,11 @@ String g_ssid = WIFI_SSID;
 String g_pass = WIFI_PASS;
 String g_host = BACKEND_HOST;
 Preferences g_prefs;
+
+// Secure TLS client for talking to a public (HTTPS) backend. The connection
+// is encrypted; the server certificate is not pinned, which is acceptable for
+// this demo scope.
+WiFiClientSecure g_secure;
 
 // Custom types defined here (before any PlatformIO auto-generated prototypes)
 // so the generated prototypes can resolve them.
@@ -135,8 +141,8 @@ bool reportScan(uint16_t fingerprintId, String& action, String& message) {
   bool granted = false;
   for (int attempt = 0; attempt < 3 && WiFi.status() == WL_CONNECTED; attempt++) {
     HTTPClient http;
-    String url = String("http://") + g_host + ":" + BACKEND_PORT + "/esp/scan";
-    http.begin(url);
+    String url = String("https://") + g_host + ":" + BACKEND_PORT + "/esp/scan";
+    http.begin(g_secure, url);
     http.setTimeout(4000);
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(body);
@@ -163,8 +169,8 @@ bool reportScan(uint16_t fingerprintId, String& action, String& message) {
 bool reportScanDenied() {
   if (WiFi.status() != WL_CONNECTED) return false;
   HTTPClient http;
-  String url = String("http://") + g_host + ":" + BACKEND_PORT + "/esp/scan-denied";
-  http.begin(url);
+  String url = String("https://") + g_host + ":" + BACKEND_PORT + "/esp/scan-denied";
+  http.begin(g_secure, url);
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<128> doc;
@@ -182,8 +188,8 @@ bool fetchEnrollJob(EnrollJob& job) {
   job.active = false;
   if (WiFi.status() != WL_CONNECTED) return false;
   HTTPClient http;
-  String url = String("http://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-job";
-  http.begin(url);
+  String url = String("https://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-job";
+  http.begin(g_secure, url);
   http.addHeader("x-esp-secret", ESP_SECRET);
   int code = http.GET();
   if (code == 200) {
@@ -208,8 +214,8 @@ bool fetchEnrollJob(EnrollJob& job) {
 void sendEnrollResult(uint16_t memberId, bool success, const char* reason) {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-result";
-  http.begin(url);
+  String url = String("https://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-result";
+  http.begin(g_secure, url);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-esp-secret", ESP_SECRET);
   StaticJsonDocument<192> doc;
@@ -228,8 +234,8 @@ void sendEnrollResult(uint16_t memberId, bool success, const char* reason) {
 void reportEnrollStatus(uint16_t memberId, const char* step, int quality, const char* message) {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
-  String url = String("http://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-status";
-  http.begin(url);
+  String url = String("https://") + g_host + ":" + BACKEND_PORT + "/esp/enroll-status";
+  http.begin(g_secure, url);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-esp-secret", ESP_SECRET);
   StaticJsonDocument<256> doc;
@@ -451,7 +457,7 @@ bool promptForConfig() {
   Serial.println("The ESP32 did not connect to WiFi. Within the next few seconds,");
   Serial.println("you can configure it WITHOUT re-flashing:");
   Serial.println("   sc <ssid> <password>     - set WiFi then connect");
-  Serial.println("   sh <backendIP>          - set backend host (e.g. sh 192.168.1.31)");
+  Serial.println("   sh <host>               - set backend host (e.g. sh 192.168.1.31 or sh rdc-gym-backend.onrender.com)");
   Serial.println("   sc                       - use EspTouch SmartConfig app instead");
   Serial.println("Note: config persists and is reused on next boot.");
   Serial.printf("Current: ssid=[%s] host=[%s]\n", g_ssid.c_str(), g_host.c_str());
@@ -510,6 +516,9 @@ void setup() {
   pinMode(STATUS_LED, OUTPUT);
   setLock(false);
   digitalWrite(BUZZER_PIN, LOW);
+
+  // TLS without pinning a server certificate (demo scope).
+  g_secure.setInsecure();
 
   // Fingerprint sensor - try to detect and connect at the configured baud rate
   fpSerial.begin(FP_BAUD_RATE, SERIAL_8N1, FP_RX, FP_TX);
