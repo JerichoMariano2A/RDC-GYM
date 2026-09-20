@@ -249,6 +249,7 @@ router.post('/biometric-scan', async (req, res) => {
 
   let memberName = name;
   let clientType = type;
+  let memberByFingerprint = null;
 
   try {
     if (fpId && !memberName) {
@@ -257,6 +258,7 @@ router.post('/biometric-scan', async (req, res) => {
         [fpId],
       );
       if (fpMembers.length) {
+        memberByFingerprint = fpMembers[0];
         memberName = fpMembers[0].name;
         clientType = fpMembers[0].type;
       } else {
@@ -269,11 +271,13 @@ router.post('/biometric-scan', async (req, res) => {
       return res.status(400).json({ error: 'Biometric scan must include a name or fingerprint_id' });
     }
 
-    const [members] = await pool.query(
+    // When the finger was matched, prefer that exact membership record so the
+    // member info shown on the door display always comes from the scanned
+    // member - even if another row shares the same name.
+    const member = memberByFingerprint || (await pool.query(
       `${MEMBERSHIP_SELECT} WHERE name = ? AND status = 'active' ORDER BY id DESC LIMIT 1`,
       [memberName],
-    );
-    const member = members[0];
+    ))[0];
 
     if (!member && !fpId) {
       await writeDisplayEvent(memberName, 'denied', 'Access Denied — Not an active member', null, null, null);
@@ -326,7 +330,7 @@ router.post('/biometric-scan', async (req, res) => {
           updated.id,
         );
         await writeDisplayEvent(memberName, 'checkout', 'Thank you! See you next time.', clientType, member?.status, updated.duration, membershipStatusPayload(member));
-        return res.status(200).json({ ...updated, action: 'checkout' });
+        return res.status(200).json({ ...updated, action: 'checkout', payload: membershipStatusPayload(member) });
       }
     }
 
@@ -344,7 +348,7 @@ router.post('/biometric-scan', async (req, res) => {
       result.insertId,
     );
     await writeDisplayEvent(memberName, 'checkin', 'Thank you for choosing RDC Gym!', clientType, member?.status, null, membershipStatusPayload(member));
-    res.status(201).json({ ...withDuration(rows[0]), action: 'checkin' });
+    res.status(201).json({ ...withDuration(rows[0]), action: 'checkin', payload: membershipStatusPayload(member) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to record biometric scan' });
@@ -1145,6 +1149,7 @@ function membershipStatusPayload(member, coachingThreshold) {
   const threshold = Number(coachingThreshold) || Number(member.coachingSessionThreshold) || 0;
   const hasCoaching = member.coaching && member.coaching !== 'none';
   return {
+    id: member.id,
     name: member.name,
     type: member.type,
     subscribed: member.subscribed,

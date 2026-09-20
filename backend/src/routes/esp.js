@@ -74,7 +74,12 @@ router.post('/scan', async (req, res) => {
       granted: true,
       action: bio.action || 'unlock',
       message: bio.action === 'checkout' ? 'Thank you! See you next time.' : 'Welcome!',
-      member: { id: bio.id, name: bio.name, type: bio.type },
+      member: {
+        id: (bio.payload && bio.payload.id) || bio.id,
+        name: bio.name,
+        type: bio.type,
+        ...(bio.payload || {}),
+      },
     });
   } catch (err) {
     console.error('[esp:scan]', err);

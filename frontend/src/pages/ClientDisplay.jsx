@@ -28,22 +28,24 @@ function formatExpiry(expires) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function MembershipStatus({ payload }) {
+function MembershipStatus({ payload, event }) {
   const p = payload || {}
   const balance = Number(p.balance) || 0
   const hasCoaching = !!(p.coaching && p.coaching !== 'none')
   const isInstallment = p.paymentPlan && p.paymentPlan !== 'full'
+  const name = p.name || (event && event.member_name) || '—'
+  const type = p.type || (event && event.membership_type) || '—'
   return (
     <div className="client-display-status">
       <div className="client-display-status-title">Membership Status</div>
       <div className="client-display-status-grid">
         <div className="client-display-status-item">
           <span className="client-display-status-label">Name</span>
-          <span className="client-display-status-value">{p.name || '—'}</span>
+          <span className="client-display-status-value">{name}</span>
         </div>
         <div className="client-display-status-item">
           <span className="client-display-status-label">Type</span>
-          <span className="client-display-status-value">{p.type || '—'}</span>
+          <span className="client-display-status-value">{type}</span>
         </div>
         <div className="client-display-status-item">
           <span className="client-display-status-label">Date of Subscription</span>
@@ -274,7 +276,7 @@ export default function ClientDisplay() {
           >
             <ResultCard event={event} style={style} />
             {event.action !== 'denied' && event.action !== 'expired' && event.action !== 'error' && (
-              <MembershipStatus payload={event.payload} />
+              <MembershipStatus payload={event.payload} event={event} />
             )}
           </div>
         )}
