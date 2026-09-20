@@ -21,13 +21,15 @@ services:
       - key: DB_HOST
         sync: false
       - key: DB_PORT
-        sync: false
+        value: "27853"
+        sync: true
       - key: DB_USER
         sync: false
       - key: DB_PASSWORD
         sync: false
       - key: DB_NAME
-        sync: false
+        value: "defaultdb"
+        sync: true
       - key: DB_SSL
         value: "1"
       - key: JWT_SECRET
