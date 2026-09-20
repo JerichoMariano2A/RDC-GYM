@@ -34,8 +34,8 @@ const CLIENT_SELECT = `
 
 const MEMBERSHIP_SELECT = `
   SELECT id, name, membership_type AS type,
-    DATE_FORMAT(subscribed_on, "%Y-%m-%d") AS subscribed,
-    DATE_FORMAT(expires_on, "%Y-%m-%d") AS expires,
+    DATE_FORMAT(subscribed_on, '%Y-%m-%d') AS subscribed,
+    DATE_FORMAT(expires_on, '%Y-%m-%d') AS expires,
     price, status, fingerprint_id,
     membership_fee AS joinFee,
     type_price AS typePrice,
@@ -615,7 +615,7 @@ router.delete('/promo', verifyToken, requireRole('admin'), async (req, res) => {
 
 router.get('/staff', verifyToken, requireRole('admin'), async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id, username AS name, CONCAT("STF-", LPAD(id, 3, "0")) AS staffId, DATE_FORMAT(created_at, "%Y-%m-%d") AS dateAdded FROM users WHERE role = ?', ['staff']);
+    const [rows] = await pool.query('SELECT id, username AS name, CONCAT(\'STF-\', LPAD(id, 3, \'0\')) AS staffId, DATE_FORMAT(created_at, \'%Y-%m-%d\') AS dateAdded FROM users WHERE role = ?', ['staff']);
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -733,8 +733,8 @@ router.get('/audit-logs', verifyToken, requireRole('admin'), async (req, res) =>
     const totalPages = Math.max(1, Math.ceil(total / limit));
     const offset = (page - 1) * limit;
     const dataSql = `SELECT a.id,
-        DATE_FORMAT(a.created_at, "%Y-%m-%d %H:%i:%s") AS timestamp,
-        DATE_FORMAT(a.created_at, "%Y-%m-%d") AS log_date,
+        DATE_FORMAT(a.created_at, '%Y-%m-%d %H:%i:%s') AS timestamp,
+        DATE_FORMAT(a.created_at, '%Y-%m-%d') AS log_date,
         COALESCE(u.username, a.user, 'system') AS user,
         COALESCE(u.role, a.role, 'staff') AS role,
         COALESCE(a.event_type, a.action) AS event,

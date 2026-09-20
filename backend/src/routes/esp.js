@@ -115,9 +115,9 @@ router.post('/enroll-request', verifyToken, requireRole('admin|staff'), async (r
     const [members] = await pool.query('SELECT id FROM memberships WHERE id = ?', [member_id]);
     if (!members.length) return res.status(404).json({ error: 'Member not found' });
 
-    await pool.query('UPDATE door_enroll_jobs SET status = "cancelled" WHERE member_id = ? AND status IN ("pending","claimed")', [member_id]);
+    await pool.query('UPDATE door_enroll_jobs SET status = \'cancelled\' WHERE member_id = ? AND status IN (\'pending\',\'claimed\')', [member_id]);
     const [result] = await pool.query(
-      'INSERT INTO door_enroll_jobs (member_id, status) VALUES (?, "pending")',
+      'INSERT INTO door_enroll_jobs (member_id, status) VALUES (?, \'pending\')',
       [member_id],
     );
     await writeAudit(req, 'Door Enrollment Requested', `Queued fingerprint enrollment for member #${member_id}.`, 'memberships', member_id);
@@ -144,7 +144,7 @@ router.get('/enroll-job', async (req, res) => {
     );
     if (!rows.length) return ok(res, { job: null });
 
-    await pool.query('UPDATE door_enroll_jobs SET status = "claimed" WHERE id = ?', [rows[0].jobId]);
+    await pool.query('UPDATE door_enroll_jobs SET status = \'claimed\' WHERE id = ?', [rows[0].jobId]);
     return ok(res, { job: { memberId: rows[0].memberId, name: rows[0].name } });
   } catch (err) {
     console.error('[esp:enroll-job]', err);
