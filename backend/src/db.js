@@ -193,7 +193,7 @@ async function ensureTables() {
     ' created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP' +
     ') ENGINE=InnoDB;'
   );
-  await pool.query('ALTER TABLE client_display_events ADD COLUMN IF NOT EXISTS payload JSON NULL');
+  await addColumnIfMissing('client_display_events', 'payload', 'JSON NULL');
 
   await pool.query('CREATE TABLE IF NOT EXISTS door_enroll_jobs (' +
     'id INT AUTO_INCREMENT PRIMARY KEY,' +
@@ -206,22 +206,22 @@ async function ensureTables() {
     ' INDEX (status)' +
     ') ENGINE=InnoDB;'
   );
-  await pool.query('ALTER TABLE door_enroll_jobs ADD COLUMN IF NOT EXISTS reason VARCHAR(50) NULL');
-  await pool.query('ALTER TABLE door_enroll_jobs ADD COLUMN IF NOT EXISTS step VARCHAR(50) NULL');
-  await pool.query('ALTER TABLE door_enroll_jobs ADD COLUMN IF NOT EXISTS quality TINYINT UNSIGNED NULL');
-  await pool.query('ALTER TABLE door_enroll_jobs ADD COLUMN IF NOT EXISTS message VARCHAR(255) NULL');
+  await addColumnIfMissing('door_enroll_jobs', 'reason', 'VARCHAR(50) NULL');
+  await addColumnIfMissing('door_enroll_jobs', 'step', 'VARCHAR(50) NULL');
+  await addColumnIfMissing('door_enroll_jobs', 'quality', 'TINYINT UNSIGNED NULL');
+  await addColumnIfMissing('door_enroll_jobs', 'message', 'VARCHAR(255) NULL');
 
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_id INT UNSIGNED NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action VARCHAR(255) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity VARCHAR(100) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS entity_id VARCHAR(100) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS details TEXT NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS ip_address VARCHAR(60) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS `user` VARCHAR(100) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS `role` ENUM(\'admin\',\'staff\') NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS event_type VARCHAR(150) NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS description TEXT NULL');
-  await pool.query('ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+  await addColumnIfMissing('audit_logs', 'user_id', 'INT UNSIGNED NULL');
+  await addColumnIfMissing('audit_logs', 'action', 'VARCHAR(255) NULL');
+  await addColumnIfMissing('audit_logs', 'entity', 'VARCHAR(100) NULL');
+  await addColumnIfMissing('audit_logs', 'entity_id', 'VARCHAR(100) NULL');
+  await addColumnIfMissing('audit_logs', 'details', 'TEXT NULL');
+  await addColumnIfMissing('audit_logs', 'ip_address', 'VARCHAR(60) NULL');
+  await addColumnIfMissing('audit_logs', 'user', 'VARCHAR(100) NULL');
+  await addColumnIfMissing('audit_logs', 'role', "ENUM('admin','staff') NULL");
+  await addColumnIfMissing('audit_logs', 'event_type', 'VARCHAR(150) NULL');
+  await addColumnIfMissing('audit_logs', 'description', 'TEXT NULL');
+  await addColumnIfMissing('audit_logs', 'created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
 
   await pool.query('UPDATE audit_logs '
     + 'SET `user` = COALESCE(`user`, (SELECT username FROM users WHERE users.id = audit_logs.user_id), \'system\'),' +
