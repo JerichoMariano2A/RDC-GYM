@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { login, setToken, setRole } from '../services/auth'
+import { login, setToken, setRole, storeUsername } from '../services/auth'
 
 export default function Login() {
   const [username, setUsername] = useState('')
@@ -16,6 +16,7 @@ export default function Login() {
       const res = await login(username, password)
       setToken(res.token)
       setRole(res.role)
+      storeUsername(res.username || username)
       if (res.role === 'admin') navigate('/admin')
       else navigate('/dashboard')
     } catch (err) {

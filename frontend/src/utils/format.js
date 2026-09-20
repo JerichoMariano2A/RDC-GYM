@@ -32,11 +32,19 @@ export function daysUntilExpiry(expires) {
   return Math.round((end - today) / 86400000)
 }
 
+function pad2(value) {
+  return String(value).padStart(2, '0')
+}
+
+export function toLocalDateISO(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+}
+
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalDateISO(new Date())
 }
 
 export function monthStartISO() {
   const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`
 }

@@ -1,12 +1,17 @@
 import React from 'react'
-import { formatDuration, isMemberType, liveDurationSeconds } from '../utils/format'
+import { formatDuration, isMemberType, liveDurationSeconds, peso } from '../utils/format'
+
+function pendingAmount(client) {
+  const balance = Number(client.balance || 0)
+  if (balance > 0) return balance
+  return Number(client.totalAmount || 0)
+}
 
 export default function RealtimeQueue({
   clients,
   now,
   onCheckout,
-  onSimulateFingerprint,
-  canSimulate = false,
+  onCollectPayment,
   statusMessage,
 }) {
   const [tab, setTab] = React.useState('members')
@@ -19,14 +24,12 @@ export default function RealtimeQueue({
     return formatDuration(liveDurationSeconds(client.time_in_at, now))
   }
 
+  function needsPayment(client) {
+    return client.payment !== 'Paid' || Number(client.balance || 0) > 0
+  }
+
   return (
     <>
-      <div className="section-title-row">
-        <div>
-          <h3>Dashboard</h3>
-          <p>Separate live time-in and time-out records for members and walk-in clients.</p>
-        </div>
-      </div>
       <div className="dashboard-tabs">
         <button type="button" className={tab === 'members' ? 'pill active' : 'pill'} onClick={() => setTab('members')}>
           Members ({members.length})
@@ -46,11 +49,6 @@ export default function RealtimeQueue({
         ) : (
           <div className="fingerprint-note">
             Non-members are timed in at registration. Admin or staff must click End Time to store time out. Spent time is calculated automatically.
-          </div>
-        )}
-        {canSimulate && tab === 'members' && (
-          <div className="table-toolbar">
-            <button type="button" className="pill active" onClick={onSimulateFingerprint}>Simulate Fingerprint Scan</button>
           </div>
         )}
         <table>
@@ -75,19 +73,29 @@ export default function RealtimeQueue({
               <tr key={client.id ?? client.name}>
                 <td>{client.name}</td>
                 <td>{client.type}</td>
-                <td>{client.payment}</td>
+                <td>
+                  <span className={client.payment === 'Paid' && Number(client.balance || 0) <= 0 ? 'status-chip active' : 'status-chip inactive'}>
+                    {client.payment === 'Paid' ? 'Paid' : 'Unpaid'}
+                  </span>
+                  {Number(client.balance || 0) > 0 && <span className="expiry-chip">{peso(client.balance)} due</span>}
+                </td>
                 <td>{client.time_in || '--'}</td>
-                <td>{client.time_out || (client.inside ? 'Inside' : '--')}</td>
+                <td>{client.time_out || (client.inside ? <span className="status-chip inside">Inside</span> : '--')}</td>
                 <td>{spentTime(client)}</td>
                 {tab === 'non-members' && (
-                  <td>
-                    {client.inside ? (
-                      <button type="button" className="pill action" onClick={() => onCheckout(client)}>
+                  <td className="action-cell">
+                    {client.inside && onCheckout && (
+                      <button type="button" className="pill action end-time-btn" onClick={() => onCheckout(client)}>
                         End Time
                       </button>
-                    ) : (
-                      <span className="muted-text">Completed</span>
                     )}
+                    {!client.inside && !needsPayment(client) && <span className="muted-text">Completed</span>}
+                    {!client.inside && needsPayment(client) && onCollectPayment && (
+                      <button type="button" className="pill action" onClick={() => onCollectPayment(client)}>
+                        Collect {peso(pendingAmount(client))}
+                      </button>
+                    )}
+                    {!client.inside && needsPayment(client) && !onCollectPayment && <span className="muted-text">{peso(pendingAmount(client))} due</span>}
                   </td>
                 )}
               </tr>

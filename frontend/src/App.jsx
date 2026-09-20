@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Admin from './pages/Admin'
 import Staff from './pages/Staff'
+import ClientDisplay from './pages/ClientDisplay'
 import { getToken, getRole } from './services/auth'
 
 function Protected({ children, allowedRoles }) {
@@ -30,6 +31,7 @@ export default function App() {
         path="/staff"
         element={<Protected allowedRoles={["staff","admin"]}><Staff /></Protected>}
       />
+      <Route path="/client" element={<ClientDisplay />} />
       <Route path="/" element={<Navigate to="/login" replace />} />
     </Routes>
   )

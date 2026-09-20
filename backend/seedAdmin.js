@@ -40,12 +40,12 @@ async function seed() {
     const [rows] = await pool.query('SELECT id FROM users WHERE username = ?', [adminUser]);
     if (rows && rows.length) {
       console.log('Admin user already exists');
-      process.exit(0);
+    } else {
+      const hash = await bcrypt.hash(adminPass, 10);
+      await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUser, hash, 'admin']);
+      console.log('Seeded admin user:', adminUser);
     }
 
-    const hash = await bcrypt.hash(adminPass, 10);
-    await pool.query('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', [adminUser, hash, 'admin']);
-    console.log('Seeded admin user:', adminUser);
     process.exit(0);
   } catch (err) {
     console.error('Seeding failed', err);
