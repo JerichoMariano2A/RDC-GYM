@@ -864,33 +864,14 @@ router.get('/reports/dashboard', verifyToken, requireRole('admin'), async (req, 
     const cfp = [...clientParams, ...clientDateParams];
     const mfp = [...memParams, ...memDateParams];
 
-    const [[todayClientRev]] = await pool.query(
-      `SELECT COALESCE(SUM(price), 0) AS total FROM clients WHERE ${cfl}`,
-      cfp
-    );
-    const [[todayMemRev]] = await pool.query(
-      `SELECT COALESCE(SUM(price), 0) AS total FROM memberships WHERE ${mfl}`,
-      mfp
-    );
-    const totalRevenue = Number(todayClientRev.total || 0) + Number(todayMemRev.total || 0);
-
     const todayOnly = ['DATE(time_in) = CURDATE()'];
     const todayParams = [];
     if (paymentMethod && paymentMethod !== 'All') { todayOnly.push('COALESCE(payment_method, ?) = ?'); todayParams.push('Cash', paymentMethod); }
     if (membershipType && membershipType !== 'All') { todayOnly.push('client_type = ?'); todayParams.push(membershipType); }
-    const [[todayClientRevF]] = await pool.query(
-      `SELECT COALESCE(SUM(price), 0) AS total FROM clients WHERE payment_status = 'Paid' AND ${todayOnly.join(' AND ')}`,
-      todayParams
-    );
     const todayMemOnly = ['DATE(subscribed_on) = CURDATE()'];
     const todayMemParams = [];
     if (paymentMethod && paymentMethod !== 'All') { todayMemOnly.push('COALESCE(payment_method, ?) = ?'); todayMemParams.push('Cash', paymentMethod); }
     if (membershipType && membershipType !== 'All') { todayMemOnly.push('membership_type = ?'); todayMemParams.push(membershipType); }
-    const [[todayMemRevF]] = await pool.query(
-      `SELECT COALESCE(SUM(price), 0) AS total FROM memberships WHERE ${todayMemOnly.join(' AND ')}`,
-      todayMemParams
-    );
-    const todayRevenue = Number(todayClientRevF.total || 0) + Number(todayMemRevF.total || 0);
 
     const todayTxnWhere = [`DATE(time_in) = CURDATE()`];
     const todayTxnP = [];
@@ -898,148 +879,6 @@ router.get('/reports/dashboard', verifyToken, requireRole('admin'), async (req, 
     const memTxnWhere = [`DATE(subscribed_on) = CURDATE()`];
     const memTxnP = [];
     if (membershipType && membershipType !== 'All') { memTxnWhere.push('membership_type = ?'); memTxnP.push(membershipType); }
-    const [[todayTxn]] = await pool.query(
-      `SELECT (SELECT COUNT(*) FROM clients WHERE ${todayTxnWhere.join(' AND ')})
-       + (SELECT COUNT(*) FROM memberships WHERE ${memTxnWhere.join(' AND ')}) AS total`,
-      [...todayTxnP, ...memTxnP]
-    );
-    const todayTransactions = todayTxn.total;
-
-    const [[totalTxn]] = await pool.query(
-      `SELECT (SELECT COUNT(*) FROM clients WHERE payment_status = 'Paid' AND ${clientDateFilters.join(' AND ')})
-       + (SELECT COUNT(*) FROM memberships WHERE ${memDateFilters.join(' AND ')}) AS total`,
-      [...clientDateParams, ...memDateParams]
-    );
-    const totalTransactions = totalTxn.total;
-
-    const [[{ activeMembers }]] = await pool.query(
-      "SELECT COUNT(*) AS activeMembers FROM memberships WHERE status = 'active'"
-    );
-
-    const [[{ todayCheckIns }]] = await pool.query(
-      `SELECT COUNT(*) AS todayCheckIns FROM clients WHERE DATE(time_in) = CURDATE()`
-    );
-    const [[{ todayCheckOuts }]] = await pool.query(
-      `SELECT COUNT(*) AS todayCheckOuts FROM clients WHERE DATE(time_out) IS NOT NULL AND DATE(time_out) = CURDATE()`
-    );
-    const [[{ currentlyInside }]] = await pool.query(
-      `SELECT COUNT(*) AS currentlyInside FROM clients WHERE time_out IS NULL AND DATE(time_in) = CURDATE()`
-    );
-
-    const [revenueByPeriod] = await pool.query(
-      `SELECT sale_date AS period,
-        SUM(total) AS total,
-        SUM(CASE WHEN source = 'Membership' THEN total ELSE 0 END) AS membership,
-        SUM(CASE WHEN source = 'Visit' THEN total ELSE 0 END) AS visit
-      FROM (
-        SELECT DATE_FORMAT(DATE(time_in), '%Y-%m-%d') AS sale_date, 'Visit' AS source, COALESCE(SUM(price), 0) AS total
-        FROM clients WHERE ${cfl}
-        GROUP BY DATE(time_in)
-        UNION ALL
-        SELECT DATE_FORMAT(DATE(subscribed_on), '%Y-%m-%d') AS sale_date, 'Membership' AS source, COALESCE(SUM(price), 0) AS total
-        FROM memberships WHERE ${mfl}
-        GROUP BY DATE(subscribed_on)
-      ) combined
-      GROUP BY sale_date ORDER BY sale_date`,
-      [...cfp, ...mfp]
-    );
-
-    const [[salesAvg]] = await pool.query(
-      `SELECT
-        COUNT(*) AS transactions,
-        COALESCE(SUM(total), 0) AS totalSales,
-        COALESCE(MAX(total), 0) AS highest,
-        COALESCE(MIN(total), 0) AS lowest
-      FROM (
-        SELECT price AS total FROM clients WHERE ${cfl}
-        UNION ALL
-        SELECT price FROM memberships WHERE ${mfl}
-      ) t`,
-      [...cfp, ...mfp]
-    );
-    const salesSummary = {
-      totalSales: Number(salesAvg.totalSales || 0),
-      transactions: salesAvg.transactions,
-      avgTransaction: salesAvg.transactions > 0 ? Number((salesAvg.totalSales / salesAvg.transactions).toFixed(2)) : 0,
-      highestTransaction: Number(salesAvg.highest || 0),
-      lowestTransaction: Number(salesAvg.lowest || 0),
-    };
-
-    const [paymentMethods] = await pool.query(
-      `SELECT COALESCE(payment_method, 'Cash') AS method, SUM(total) AS total FROM (
-        SELECT COALESCE(payment_method, 'Cash') AS payment_method, price AS total
-        FROM clients WHERE ${cfl}
-        UNION ALL
-        SELECT COALESCE(payment_method, 'Cash') AS payment_method, price AS total
-        FROM memberships WHERE ${mfl}
-      ) t GROUP BY method ORDER BY total DESC`,
-      [...cfp, ...mfp]
-    );
-
-    let memSalesQuery = `SELECT membership_type AS type, COUNT(*) AS count, COALESCE(SUM(price), 0) AS revenue
-       FROM memberships WHERE ${mfl}
-       GROUP BY membership_type ORDER BY revenue DESC`;
-    const [membershipSales] = await pool.query(memSalesQuery, mfp);
-    const totalMemSales = membershipSales.reduce((s, r) => s + Number(r.revenue || 0), 0);
-    membershipSales.forEach(r => {
-      r.percentage = totalMemSales > 0 ? Number(((Number(r.revenue) / totalMemSales) * 100).toFixed(1)) : 0;
-    });
-
-    const [[attCheckIns]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM clients WHERE ${clientDateFilters.join(' AND ')}`,
-      clientDateParams
-    );
-    const [[attCheckOuts]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM clients WHERE time_out IS NOT NULL AND DATE(time_out) >= ? AND DATE(time_out) <= ?`,
-      [start, end]
-    );
-    const [[attInside]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM clients WHERE time_out IS NULL AND DATE(time_in) = CURDATE()`
-    );
-    const [[attTotal]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM clients WHERE ${clientDateFilters.join(' AND ')}`,
-      clientDateParams
-    );
-
-    const [dailyVisits] = await pool.query(
-      `SELECT DAYNAME(time_in) AS day_name, DAYOFWEEK(time_in) AS day_num, COUNT(*) AS visits
-       FROM clients WHERE ${clientDateFilters.join(' AND ')}
-       GROUP BY day_name, day_num ORDER BY day_num`,
-      clientDateParams
-    );
-
-    const [peakHours] = await pool.query(
-      `SELECT HOUR(time_in) AS hour, COUNT(*) AS visits
-       FROM clients WHERE ${clientDateFilters.join(' AND ')}
-       GROUP BY HOUR(time_in) ORDER BY hour`,
-      clientDateParams
-    );
-    const peakHour = peakHours.reduce((max, r) => r.visits > max.visits ? r : max, { visits: 0 });
-    const peakHourLabel = peakHour.hour != null ? `${peakHour.hour === 0 ? 12 : peakHour.hour > 12 ? peakHour.hour - 12 : peakHour.hour}:00 ${peakHour.hour < 12 ? 'AM' : 'PM'}` : 'N/A';
-
-    const [[msActive]] = await pool.query("SELECT COUNT(*) AS t FROM memberships WHERE status = 'active'");
-    const [[msExpiring]] = await pool.query("SELECT COUNT(*) AS t FROM memberships WHERE status = 'active' AND expires_on >= CURDATE() AND expires_on <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)");
-    const [[msExpired]] = await pool.query("SELECT COUNT(*) AS t FROM memberships WHERE expires_on < CURDATE() AND status = 'active'");
-
-    const joinConds = ['a.created_at >= ?', 'a.created_at <= DATE_ADD(?, INTERVAL 1 DAY)'];
-    const joinParams = [start, end];
-    const whereConds = ['u.role = ?'];
-    const whereParams = ['staff'];
-    if (staffId && staffId !== 'All') { whereConds.push('u.id = ?'); whereParams.push(staffId); }
-    const [staffActivity] = await pool.query(
-      `SELECT u.id AS userId, COALESCE(u.full_name, u.username) AS name,
-        SUM(CASE WHEN a.event_type IN ('Walk-in Check-in', 'Membership Created') THEN 1 ELSE 0 END) AS transactions,
-        SUM(CASE WHEN a.event_type IN ('Walk-in Check-in', 'Membership Created') THEN
-          CASE WHEN a.description REGEXP 'Total: [0-9.]+' THEN CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(a.description, '. Paid', 1), 'Total: ', -1) AS DECIMAL(10,2)) ELSE 0 END
-        ELSE 0 END) AS sales,
-        SUM(CASE WHEN a.event_type = 'Walk-in Check-in' THEN 1 ELSE 0 END) AS checkIns,
-        SUM(CASE WHEN a.event_type = 'Walk-in Check-out' THEN 1 ELSE 0 END) AS checkOuts
-       FROM users u
-       LEFT JOIN audit_logs a ON a.user_id = u.id AND ${joinConds.join(' AND ')}
-       WHERE ${whereConds.join(' AND ')}
-       GROUP BY u.id, u.full_name, u.username ORDER BY transactions DESC`,
-      [...joinParams, ...whereParams]
-    );
 
     const txnClientWhere = ['payment_status = ?'];
     const txnClientParams = ['Paid'];
@@ -1055,35 +894,199 @@ router.get('/reports/dashboard', verifyToken, requireRole('admin'), async (req, 
     }
     const txncDateFilters = clientDateFilters.join(' AND ');
     const txnmDateFilters = memDateFilters.join(' AND ');
-    const [recentTransactions] = await pool.query(
-      `SELECT CONCAT('INV-', LPAD(id, 5, '0')) AS transactionNo,
-        DATE_FORMAT(time_in, '%Y-%m-%d') AS date,
-        DATE_FORMAT(time_in, '%h:%i %p') AS time,
-        name AS member,
-        client_type AS type,
-        price AS amount,
-        COALESCE(payment_method, 'Cash') AS paymentMethod,
-        payment_status AS status
-       FROM clients WHERE ${txnClientWhere.join(' AND ')} AND ${txncDateFilters}
-       ORDER BY id DESC LIMIT 50`,
-      [...txnClientParams, ...clientDateParams]
-    );
-
     const txnMemDateWhere = txnMemWhere.length > 0 ? [...txnMemWhere, ...memDateFilters] : memDateFilters;
     const txnMemDateParams = [...txnMemParams, ...memDateParams];
-    const [recentMemTxns] = await pool.query(
-      `SELECT CONCAT('INV-M', LPAD(id, 5, '0')) AS transactionNo,
-        DATE_FORMAT(subscribed_on, '%Y-%m-%d') AS date,
-        DATE_FORMAT(subscribed_on, '%h:%i %p') AS time,
-        name AS member,
-        CONCAT(membership_type, ' Membership') AS type,
-        price AS amount,
-        COALESCE(payment_method, 'Cash') AS paymentMethod,
-        'Paid' AS status
-       FROM memberships WHERE ${txnMemDateWhere.join(' AND ')}
-       ORDER BY id DESC LIMIT 50`,
-      txnMemDateParams
-    );
+
+    const joinConds = ['a.created_at >= ?', 'a.created_at <= DATE_ADD(?, INTERVAL 1 DAY)'];
+    const joinParams = [start, end];
+    const whereConds = ['u.role = ?'];
+    const whereParams = ['staff'];
+    if (staffId && staffId !== 'All') { whereConds.push('u.id = ?'); whereParams.push(staffId); }
+
+    // Fire every query at once - all blocks are independent of each other, so
+    // waiting on them one-by-one only multiplied the per-query round-trip time.
+    const [
+      [todayClientRev],
+      [todayMemRev],
+      [todayClientRevF],
+      [todayMemRevF],
+      [todayTxn],
+      [totalTxn],
+      [{ activeMembers }],
+      [{ todayCheckIns }],
+      [{ todayCheckOuts }],
+      [{ currentlyInside }],
+      [revenueByPeriod],
+      [salesAvg],
+      [paymentMethods],
+      [membershipSales],
+      [attCheckIns],
+      [attCheckOuts],
+      [attInside],
+      [attTotal],
+      [dailyVisits],
+      [peakHours],
+      [msActive],
+      [msExpiring],
+      [msExpired],
+      [staffActivity],
+      [recentTransactions],
+      [recentMemTxns],
+    ] = await Promise.all([
+      pool.query(`SELECT COALESCE(SUM(price), 0) AS total FROM clients WHERE ${cfl}`, cfp),
+      pool.query(`SELECT COALESCE(SUM(price), 0) AS total FROM memberships WHERE ${mfl}`, mfp),
+      pool.query(`SELECT COALESCE(SUM(price), 0) AS total FROM clients WHERE payment_status = 'Paid' AND ${todayOnly.join(' AND ')}`, todayParams),
+      pool.query(`SELECT COALESCE(SUM(price), 0) AS total FROM memberships WHERE ${todayMemOnly.join(' AND ')}`, todayMemParams),
+      pool.query(
+        `SELECT (SELECT COUNT(*) FROM clients WHERE ${todayTxnWhere.join(' AND ')})
+         + (SELECT COUNT(*) FROM memberships WHERE ${memTxnWhere.join(' AND ')}) AS total`,
+        [...todayTxnP, ...memTxnP]
+      ),
+      pool.query(
+        `SELECT (SELECT COUNT(*) FROM clients WHERE payment_status = 'Paid' AND ${clientDateFilters.join(' AND ')})
+         + (SELECT COUNT(*) FROM memberships WHERE ${memDateFilters.join(' AND ')}) AS total`,
+        [...clientDateParams, ...memDateParams]
+      ),
+      pool.query("SELECT COUNT(*) AS activeMembers FROM memberships WHERE status = 'active'"),
+      pool.query("SELECT COUNT(*) AS todayCheckIns FROM clients WHERE DATE(time_in) = CURDATE()"),
+      pool.query("SELECT COUNT(*) AS todayCheckOuts FROM clients WHERE DATE(time_out) IS NOT NULL AND DATE(time_out) = CURDATE()"),
+      pool.query("SELECT COUNT(*) AS currentlyInside FROM clients WHERE time_out IS NULL AND DATE(time_in) = CURDATE()"),
+      pool.query(
+        `SELECT sale_date AS period,
+          SUM(total) AS total,
+          SUM(CASE WHEN source = 'Membership' THEN total ELSE 0 END) AS membership,
+          SUM(CASE WHEN source = 'Visit' THEN total ELSE 0 END) AS visit
+        FROM (
+          SELECT DATE_FORMAT(DATE(time_in), '%Y-%m-%d') AS sale_date, 'Visit' AS source, COALESCE(SUM(price), 0) AS total
+          FROM clients WHERE ${cfl}
+          GROUP BY DATE(time_in)
+          UNION ALL
+          SELECT DATE_FORMAT(DATE(subscribed_on), '%Y-%m-%d') AS sale_date, 'Membership' AS source, COALESCE(SUM(price), 0) AS total
+          FROM memberships WHERE ${mfl}
+          GROUP BY DATE(subscribed_on)
+        ) combined
+        GROUP BY sale_date ORDER BY sale_date`,
+        [...cfp, ...mfp]
+      ),
+      pool.query(
+        `SELECT
+          COUNT(*) AS transactions,
+          COALESCE(SUM(total), 0) AS totalSales,
+          COALESCE(MAX(total), 0) AS highest,
+          COALESCE(MIN(total), 0) AS lowest
+        FROM (
+          SELECT price AS total FROM clients WHERE ${cfl}
+          UNION ALL
+          SELECT price FROM memberships WHERE ${mfl}
+        ) t`,
+        [...cfp, ...mfp]
+      ),
+      pool.query(
+        `SELECT COALESCE(payment_method, 'Cash') AS method, SUM(total) AS total FROM (
+          SELECT COALESCE(payment_method, 'Cash') AS payment_method, price AS total
+          FROM clients WHERE ${cfl}
+          UNION ALL
+          SELECT COALESCE(payment_method, 'Cash') AS payment_method, price AS total
+          FROM memberships WHERE ${mfl}
+        ) t GROUP BY method ORDER BY total DESC`,
+        [...cfp, ...mfp]
+      ),
+      pool.query(
+        `SELECT membership_type AS type, COUNT(*) AS count, COALESCE(SUM(price), 0) AS revenue
+         FROM memberships WHERE ${mfl}
+         GROUP BY membership_type ORDER BY revenue DESC`,
+        mfp
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS total FROM clients WHERE ${clientDateFilters.join(' AND ')}`,
+        clientDateParams
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS total FROM clients WHERE time_out IS NOT NULL AND DATE(time_out) >= ? AND DATE(time_out) <= ?`,
+        [start, end]
+      ),
+      pool.query("SELECT COUNT(*) AS total FROM clients WHERE time_out IS NULL AND DATE(time_in) = CURDATE()"),
+      pool.query(
+        `SELECT COUNT(*) AS total FROM clients WHERE ${clientDateFilters.join(' AND ')}`,
+        clientDateParams
+      ),
+      pool.query(
+        `SELECT DAYNAME(time_in) AS day_name, DAYOFWEEK(time_in) AS day_num, COUNT(*) AS visits
+         FROM clients WHERE ${clientDateFilters.join(' AND ')}
+         GROUP BY day_name, day_num ORDER BY day_num`,
+        clientDateParams
+      ),
+      pool.query(
+        `SELECT HOUR(time_in) AS hour, COUNT(*) AS visits
+         FROM clients WHERE ${clientDateFilters.join(' AND ')}
+         GROUP BY HOUR(time_in) ORDER BY hour`,
+        clientDateParams
+      ),
+      pool.query("SELECT COUNT(*) AS t FROM memberships WHERE status = 'active'"),
+      pool.query("SELECT COUNT(*) AS t FROM memberships WHERE status = 'active' AND expires_on >= CURDATE() AND expires_on <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)"),
+      pool.query("SELECT COUNT(*) AS t FROM memberships WHERE expires_on < CURDATE() AND status = 'active'"),
+      pool.query(
+        `SELECT u.id AS userId, COALESCE(u.full_name, u.username) AS name,
+          SUM(CASE WHEN a.event_type IN ('Walk-in Check-in', 'Membership Created') THEN 1 ELSE 0 END) AS transactions,
+          SUM(CASE WHEN a.event_type IN ('Walk-in Check-in', 'Membership Created') THEN
+            CASE WHEN a.description REGEXP 'Total: [0-9.]+' THEN CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(a.description, '. Paid', 1), 'Total: ', -1) AS DECIMAL(10,2)) ELSE 0 END
+          ELSE 0 END) AS sales,
+          SUM(CASE WHEN a.event_type = 'Walk-in Check-in' THEN 1 ELSE 0 END) AS checkIns,
+          SUM(CASE WHEN a.event_type = 'Walk-in Check-out' THEN 1 ELSE 0 END) AS checkOuts
+         FROM users u
+         LEFT JOIN audit_logs a ON a.user_id = u.id AND ${joinConds.join(' AND ')}
+         WHERE ${whereConds.join(' AND ')}
+         GROUP BY u.id, u.full_name, u.username ORDER BY transactions DESC`,
+        [...joinParams, ...whereParams]
+      ),
+      pool.query(
+        `SELECT CONCAT('INV-', LPAD(id, 5, '0')) AS transactionNo,
+          DATE_FORMAT(time_in, '%Y-%m-%d') AS date,
+          DATE_FORMAT(time_in, '%h:%i %p') AS time,
+          name AS member,
+          client_type AS type,
+          price AS amount,
+          COALESCE(payment_method, 'Cash') AS paymentMethod,
+          payment_status AS status
+         FROM clients WHERE ${txnClientWhere.join(' AND ')} AND ${txncDateFilters}
+         ORDER BY id DESC LIMIT 50`,
+        [...txnClientParams, ...clientDateParams]
+      ),
+      pool.query(
+        `SELECT CONCAT('INV-M', LPAD(id, 5, '0')) AS transactionNo,
+          DATE_FORMAT(subscribed_on, '%Y-%m-%d') AS date,
+          DATE_FORMAT(subscribed_on, '%h:%i %p') AS time,
+          name AS member,
+          CONCAT(membership_type, ' Membership') AS type,
+          price AS amount,
+          COALESCE(payment_method, 'Cash') AS paymentMethod,
+          'Paid' AS status
+         FROM memberships WHERE ${txnMemDateWhere.join(' AND ')}
+         ORDER BY id DESC LIMIT 50`,
+        txnMemDateParams
+      ),
+    ]);
+
+    const totalRevenue = Number(todayClientRev.total || 0) + Number(todayMemRev.total || 0);
+    const todayRevenue = Number(todayClientRevF.total || 0) + Number(todayMemRevF.total || 0);
+    const todayTransactions = todayTxn.total;
+    const totalTransactions = totalTxn.total;
+
+    const salesSummary = {
+      totalSales: Number(salesAvg.totalSales || 0),
+      transactions: salesAvg.transactions,
+      avgTransaction: salesAvg.transactions > 0 ? Number((salesAvg.totalSales / salesAvg.transactions).toFixed(2)) : 0,
+      highestTransaction: Number(salesAvg.highest || 0),
+      lowestTransaction: Number(salesAvg.lowest || 0),
+    };
+
+    const totalMemSales = membershipSales.reduce((s, r) => s + Number(r.revenue || 0), 0);
+    membershipSales.forEach(r => {
+      r.percentage = totalMemSales > 0 ? Number(((Number(r.revenue) / totalMemSales) * 100).toFixed(1)) : 0;
+    });
+
+    const peakHour = peakHours.reduce((max, r) => r.visits > max.visits ? r : max, { visits: 0 });
+    const peakHourLabel = peakHour.hour != null ? `${peakHour.hour === 0 ? 12 : peakHour.hour > 12 ? peakHour.hour - 12 : peakHour.hour}:00 ${peakHour.hour < 12 ? 'AM' : 'PM'}` : 'N/A';
 
     let allTxns = [...recentTransactions, ...recentMemTxns]
       .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''));
