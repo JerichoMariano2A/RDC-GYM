@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+const API = import.meta.env.VITE_API_BASE || 'https://rdc-gym-backend-z2di.onrender.com'
 
 const axiosInstance = axios.create({
   baseURL: API,

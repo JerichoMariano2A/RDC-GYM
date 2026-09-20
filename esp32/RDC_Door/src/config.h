@@ -26,11 +26,11 @@ const uint32_t CONFIG_SERIAL_WINDOW_MS = 15000; // how long serial input is acce
 // only serves plain HTTP, keep BACKEND_PORT = 4000 and use "http://" URLs;
 // for a public (cloud) backend, keep BACKEND_PORT = 443.
 // ---------------------------------------------------------------------------
-const char* BACKEND_HOST = "192.168.100.9";  // fallback host (leave empty to force config)
+const char* BACKEND_HOST = "rdc-gym-backend-z2di.onrender.com";  // fallback host (leave empty to force config)
 const uint16_t BACKEND_PORT = 443;
 
 // Shared secret - must match BACKEND .env ESP_SECRET (or BIOMETRIC_SECRET)
-const char* ESP_SECRET = "rdc_esp_secret";
+const char* ESP_SECRET = "rdc-esp-PEkZyOltKqQ5N91h";
 
 // ---------------------------------------------------------------------------
 // Pins (ESP32 DEVKITV1)

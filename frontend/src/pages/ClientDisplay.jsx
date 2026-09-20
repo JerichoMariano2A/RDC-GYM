@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 
-const API = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+const API = import.meta.env.VITE_API_BASE || 'https://rdc-gym-backend-z2di.onrender.com'
 
 function peso(amount) {
   return `\u20B1${Number(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
