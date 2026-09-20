@@ -10,10 +10,12 @@ services:
     repo: https://github.com/JerichoMariano2A/RDC-GYM.git
     rootDir: backend
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      - key: NODE_VERSION
+        value: 20.18.1
       - key: PORT
         value: 4000
       - key: DB_HOST
